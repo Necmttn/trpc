@@ -1,7 +1,7 @@
 // @ts-check
-/* eslint-disable @typescript-eslint/no-var-requires */
 
-const { parseEnv } = require('./src/utils/env');
+import { parseEnv } from './src/utils/env';
+
 const env = parseEnv(process.env);
 
 module.exports = {
@@ -62,6 +62,8 @@ module.exports = {
         'server/data-transformers',
         'server/metadata',
         'server/caching',
+        'server/subscriptions',
+        'server/websockets',
       ],
     },
     {
@@ -83,16 +85,19 @@ module.exports = {
           },
           items: [
             'client/react/setup',
+            'client/react/server-components',
             'client/react/infer-types',
             'client/react/useQuery',
             'client/react/useMutation',
             'client/react/useInfiniteQuery',
+            'client/react/useSubscription',
             'client/react/useUtils',
             'client/react/createTRPCQueryUtils',
             'client/react/useQueries',
             'client/react/suspense',
             'client/react/getQueryKey',
             'client/react/aborting-procedure-calls',
+            'client/react/disabling-queries',
           ],
         },
         {
@@ -138,9 +143,11 @@ module.exports = {
             'client/links/httpLink',
             'client/links/httpBatchLink',
             'client/links/httpBatchStreamLink',
+            'client/links/httpSubscriptionLink',
             'client/links/wsLink',
             'client/links/splitLink',
             'client/links/loggerLink',
+            'client/links/retryLink',
           ],
         },
         'client/headers',
@@ -156,12 +163,7 @@ module.exports = {
         title: 'Extra Information',
         slug: '/further',
       },
-      items: [
-        'further/faq',
-        'further/rpc',
-        'further/subscriptions',
-        'further/further-reading',
-      ],
+      items: ['further/faq', 'further/rpc', 'further/further-reading'],
     },
     ...(env.TYPEDOC
       ? [

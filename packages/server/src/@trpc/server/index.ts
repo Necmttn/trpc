@@ -13,10 +13,13 @@ export {
   createFlatProxy as createTRPCFlatProxy,
   type inferProcedureInput,
   type inferProcedureOutput,
+  type inferProcedureBuilderResolverOptions,
   type inferRouterError,
   type inferRouterInputs,
   type inferRouterOutputs,
   type inferRouterContext,
+  type inferClientTypes as inferTRPCClientTypes,
+  type AnyClientTypes as AnyTRPCClientTypes,
   type inferTransformedProcedureOutput,
   type inferTransformedSubscriptionOutput,
   type AnyProcedure as AnyTRPCProcedure,
@@ -26,9 +29,21 @@ export {
   type ProcedureType as TRPCProcedureType,
   type AnyMutationProcedure as AnyTRPCMutationProcedure,
   type AnyQueryProcedure as AnyTRPCQueryProcedure,
-  type ProcedureRouterRecord as TRPCProcedureRouterRecord,
+  type RouterRecord as TRPCRouterRecord,
   type AnySubscriptionProcedure as AnyTRPCSubscriptionProcedure,
   type ProcedureOptions as TRPCProcedureOptions,
+  type CreateContextCallback,
+  type MutationProcedure as TRPCMutationProcedure,
+  type QueryProcedure as TRPCQueryProcedure,
+  type SubscriptionProcedure as TRPCSubscriptionProcedure,
+  type TRPCBuilder,
+  /**
+   * @deprecated use `tracked(id, data)` instead
+   */
+  sse,
+  tracked,
+  type TrackedEnvelope,
+  isTrackedEnvelope,
 } from '../../unstable-core-do-not-import';
 
 export type {
@@ -71,10 +86,6 @@ export type {
    * @deprecated use `AnyTRPCQueryProcedure` instead
    */
   AnyQueryProcedure,
-  /**
-   * @deprecated use `TRPCProcedureRouterRecord` instead
-   */
-  ProcedureRouterRecord,
   /**
    * @deprecated use `AnyTRPCSubscriptionProcedure` instead
    */

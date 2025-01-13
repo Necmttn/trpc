@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "module": "esnext",
     "declaration": true,
-    "emitDeclarationOnly": true,
+
     "declarationMap": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
@@ -17,9 +17,8 @@
     "jsx": "preserve",
     "incremental": true,
     "outDir": "build",
-    "baseUrl": ".",
     "paths": {
-      "~/*": ["src/*"]
+      "~/*": ["./src/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"]

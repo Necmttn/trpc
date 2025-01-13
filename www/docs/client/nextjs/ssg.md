@@ -17,15 +17,15 @@ This can be done using [server-side helpers](/docs/client/nextjs/server-side-hel
 
 ```tsx title='pages/posts/[id].tsx'
 import { createServerSideHelpers } from '@trpc/react-query/server';
+import { prisma } from '~/server/context';
+import { appRouter } from '~/server/routers/_app';
+import { trpc } from '~/utils/trpc';
 import {
   GetStaticPaths,
   GetStaticPropsContext,
   InferGetStaticPropsType,
 } from 'next';
-import { prisma } from 'server/context';
-import { appRouter } from 'server/routers/_app';
 import superjson from 'superjson';
-import { trpc } from 'utils/trpc';
 
 export async function getStaticProps(
   context: GetStaticPropsContext<{ id: string }>,
@@ -117,7 +117,6 @@ import type { AppRouter } from './api/trpc/[trpc]';
 export const trpc = createTRPCNext<AppRouter>({
   config(opts) {
     return {
-      transformer: superjson,
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,

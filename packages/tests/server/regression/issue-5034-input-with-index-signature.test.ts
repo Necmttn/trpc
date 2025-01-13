@@ -10,7 +10,7 @@ export function hardcodedExample() {
 }
 
 const t = initTRPC.create();
-const symbol = Symbol('symbol');
+const symbol = Symbol();
 const appRouter = t.router({
   inputWithIndexSignature: t.procedure
     .input(hardcodedExample())
@@ -56,6 +56,7 @@ describe('inferRouterInputs/inferRouterOutputs', () => {
     }>();
     expectTypeOf<Output>().toEqualTypeOf<{
       [x: string]: unknown;
+      [x: number]: unknown;
       name: string;
     }>();
   });
@@ -69,6 +70,7 @@ describe('inferRouterInputs/inferRouterOutputs', () => {
     }>();
     expectTypeOf<Output>().toEqualTypeOf<{
       [x: string]: unknown;
+      [x: number]: unknown;
       name: string;
     }>();
   });

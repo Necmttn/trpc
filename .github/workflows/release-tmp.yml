@@ -4,10 +4,11 @@ on:
   push:
     branches:
       # Replace this with the branch you want to release from
-      # 👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇
-      - 'export-from-main-nuke-core'
-      # 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
+      # 👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇
+      - '12-06-react'
+      # 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
     paths:
+      - '.github/setup/*'
       - '.github/workflows/release-tmp.yml'
       - 'packages/**'
       - '!packages/**/package.json'

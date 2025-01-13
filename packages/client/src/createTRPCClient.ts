@@ -1,19 +1,15 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type { Unsubscribable } from '@trpc/server/observable';
 import type {
-  AnyMutationProcedure,
   AnyProcedure,
-  AnyQueryProcedure,
-  AnyRootConfig,
   AnyRouter,
-  AnySubscriptionProcedure,
+  inferClientTypes,
   inferProcedureInput,
   inferTransformedProcedureOutput,
-  inferTransformedSubscriptionOutput,
   IntersectionError,
   ProcedureOptions,
-  ProcedureRouterRecord,
   ProcedureType,
+  RouterRecord,
 } from '@trpc/server/unstable-core-do-not-import';
 import {
   createFlatProxy,
@@ -33,57 +29,73 @@ import type { TRPCClientError } from './TRPCClientError';
 export type inferRouterClient<TRouter extends AnyRouter> =
   DecoratedProcedureRecord<TRouter, TRouter['_def']['record']>;
 
-/** @internal */
-export type Resolver<
-  TConfig extends AnyRootConfig,
-  TProcedure extends AnyProcedure,
-> = (
-  input: inferProcedureInput<TProcedure>,
-  opts?: ProcedureOptions,
-) => Promise<inferTransformedProcedureOutput<TConfig, TProcedure>>;
+type ResolverDef = {
+  input: any;
+  output: any;
+  transformer: boolean;
+  errorShape: any;
+};
 
-type SubscriptionResolver<
-  TConfig extends AnyRootConfig,
-  TProcedure extends AnyProcedure,
-> = (
-  input: inferProcedureInput<TProcedure>,
-  opts?: Partial<
-    TRPCSubscriptionObserver<
-      inferTransformedSubscriptionOutput<TConfig, TProcedure>,
-      TRPCClientError<TConfig>
-    >
+type coerceAsyncGeneratorToIterable<T> =
+  T extends AsyncGenerator<infer $T, infer $Return, infer $Next>
+    ? AsyncIterable<$T, $Return, $Next>
+    : T;
+
+/** @internal */
+export type Resolver<TDef extends ResolverDef> = (
+  input: TDef['input'],
+  opts?: ProcedureOptions,
+) => Promise<coerceAsyncGeneratorToIterable<TDef['output']>>;
+
+type SubscriptionResolver<TDef extends ResolverDef> = (
+  input: TDef['input'],
+  opts: Partial<
+    TRPCSubscriptionObserver<TDef['output'], TRPCClientError<TDef>>
   > &
     ProcedureOptions,
 ) => Unsubscribable;
 
 type DecorateProcedure<
-  TConfig extends AnyRootConfig,
-  TProcedure extends AnyProcedure,
-> = TProcedure extends AnyQueryProcedure
+  TType extends ProcedureType,
+  TDef extends ResolverDef,
+> = TType extends 'query'
   ? {
-      query: Resolver<TConfig, TProcedure>;
+      query: Resolver<TDef>;
     }
-  : TProcedure extends AnyMutationProcedure
-  ? {
-      mutate: Resolver<TConfig, TProcedure>;
-    }
-  : TProcedure extends AnySubscriptionProcedure
-  ? {
-      subscribe: SubscriptionResolver<TConfig, TProcedure>;
-    }
-  : never;
+  : TType extends 'mutation'
+    ? {
+        mutate: Resolver<TDef>;
+      }
+    : TType extends 'subscription'
+      ? {
+          subscribe: SubscriptionResolver<TDef>;
+        }
+      : never;
 
 /**
  * @internal
  */
 type DecoratedProcedureRecord<
   TRouter extends AnyRouter,
-  TProcedures extends ProcedureRouterRecord,
+  TRecord extends RouterRecord,
 > = {
-  [TKey in keyof TProcedures]: TProcedures[TKey] extends AnyRouter
-    ? DecoratedProcedureRecord<TRouter, TProcedures[TKey]['_def']['record']>
-    : TProcedures[TKey] extends AnyProcedure
-    ? DecorateProcedure<TRouter['_def']['_config'], TProcedures[TKey]>
+  [TKey in keyof TRecord]: TRecord[TKey] extends infer $Value
+    ? $Value extends RouterRecord
+      ? DecoratedProcedureRecord<TRouter, $Value>
+      : $Value extends AnyProcedure
+        ? DecorateProcedure<
+            $Value['_def']['type'],
+            {
+              input: inferProcedureInput<$Value>;
+              output: inferTransformedProcedureOutput<
+                inferClientTypes<TRouter>,
+                $Value
+              >;
+              errorShape: inferClientTypes<TRouter>['errorShape'];
+              transformer: inferClientTypes<TRouter>['transformer'];
+            }
+          >
+        : never
     : never;
 };
 
@@ -107,10 +119,10 @@ export const clientCallTypeToProcedureType = (
  * Creates a proxy client and shows type errors if you have query names that collide with built-in properties
  */
 export type CreateTRPCClient<TRouter extends AnyRouter> =
-  inferRouterClient<TRouter> extends infer $ProcedureRecord
-    ? UntypedClientProperties & keyof $ProcedureRecord extends never
+  inferRouterClient<TRouter> extends infer $Value
+    ? UntypedClientProperties & keyof $Value extends never
       ? inferRouterClient<TRouter>
-      : IntersectionError<UntypedClientProperties & keyof $ProcedureRecord>
+      : IntersectionError<UntypedClientProperties & keyof $Value>
     : never;
 
 /**
@@ -119,6 +131,16 @@ export type CreateTRPCClient<TRouter extends AnyRouter> =
 export function createTRPCClientProxy<TRouter extends AnyRouter>(
   client: TRPCUntypedClient<TRouter>,
 ): CreateTRPCClient<TRouter> {
+  const proxy = createRecursiveProxy<CreateTRPCClient<TRouter>>(
+    ({ path, args }) => {
+      const pathCopy = [...path];
+      const procedureType = clientCallTypeToProcedureType(pathCopy.pop()!);
+
+      const fullPath = pathCopy.join('.');
+
+      return (client as any)[procedureType](fullPath, ...args);
+    },
+  );
   return createFlatProxy<CreateTRPCClient<TRouter>>((key) => {
     if (client.hasOwnProperty(key)) {
       return (client as any)[key as any];
@@ -126,14 +148,7 @@ export function createTRPCClientProxy<TRouter extends AnyRouter>(
     if (key === '__untypedClient') {
       return client;
     }
-    return createRecursiveProxy(({ path, args }) => {
-      const pathCopy = [key, ...path];
-      const procedureType = clientCallTypeToProcedureType(pathCopy.pop()!);
-
-      const fullPath = pathCopy.join('.');
-
-      return (client as any)[procedureType](fullPath, ...args);
-    });
+    return proxy[key];
   });
 }
 

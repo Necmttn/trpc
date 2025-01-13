@@ -1,3 +1,4 @@
+import type { TRPCLink } from '@trpc/client';
 import {
   createWSClient,
   httpBatchLink,
@@ -5,10 +6,11 @@ import {
   wsLink,
 } from '@trpc/client';
 import { createTRPCNext } from '@trpc/next';
+import { ssrPrepass } from '@trpc/next/ssrPrepass';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { NextPageContext } from 'next';
 import getConfig from 'next/config';
-import type { AppRouter } from 'server/routers/_app';
+import type { AppRouter } from '~/server/routers/_app';
 import superjson from 'superjson';
 
 // ℹ️ Type-only import:
@@ -18,9 +20,13 @@ const { publicRuntimeConfig } = getConfig();
 
 const { APP_URL, WS_URL } = publicRuntimeConfig;
 
-function getEndingLink(ctx: NextPageContext | undefined) {
+function getEndingLink(ctx: NextPageContext | undefined): TRPCLink<AppRouter> {
   if (typeof window === 'undefined') {
     return httpBatchLink({
+      /**
+       * @see https://trpc.io/docs/v11/data-transformers
+       */
+      transformer: superjson,
       url: `${APP_URL}/api/trpc`,
       headers() {
         if (!ctx?.req?.headers) {
@@ -37,25 +43,34 @@ function getEndingLink(ctx: NextPageContext | undefined) {
   const client = createWSClient({
     url: WS_URL,
   });
-  return wsLink<AppRouter>({
+  return wsLink({
     client,
+    /**
+     * @see https://trpc.io/docs/v11/data-transformers
+     */
+    transformer: superjson,
   });
 }
 
 /**
  * A set of strongly-typed React hooks from your `AppRouter` type signature with `createReactQueryHooks`.
- * @link https://trpc.io/docs/v11/react#3-create-trpc-hooks
+ * @see https://trpc.io/docs/v11/react#3-create-trpc-hooks
  */
 export const trpc = createTRPCNext<AppRouter>({
+  /**
+   * @see https://trpc.io/docs/v11/ssr
+   */
+  ssr: true,
+  ssrPrepass,
   config({ ctx }) {
     /**
      * If you want to use SSR, you need to use the server's full URL
-     * @link https://trpc.io/docs/v11/ssr
+     * @see https://trpc.io/docs/v11/ssr
      */
 
     return {
       /**
-       * @link https://trpc.io/docs/v11/client/links
+       * @see https://trpc.io/docs/v11/client/links
        */
       links: [
         // adds pretty logs to your console in development and logs errors in production
@@ -68,19 +83,15 @@ export const trpc = createTRPCNext<AppRouter>({
         getEndingLink(ctx),
       ],
       /**
-       * @link https://trpc.io/docs/v11/data-transformers
-       */
-      transformer: superjson,
-      /**
-       * @link https://tanstack.com/query/v5/docs/react/reference/QueryClient
+       * @see https://tanstack.com/query/v5/docs/reference/QueryClient
        */
       queryClientConfig: { defaultOptions: { queries: { staleTime: 60 } } },
     };
   },
   /**
-   * @link https://trpc.io/docs/v11/ssr
+   * @see https://trpc.io/docs/v11/data-transformers
    */
-  ssr: true,
+  transformer: superjson,
 });
 
 // export const transformer = superjson;
