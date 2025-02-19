@@ -1,37 +1,25 @@
+// Vitest doesn't play nice with JSOM ArrayBuffer's: https://github.com/vitest-dev/vitest/issues/4043#issuecomment-1742028595
+// @vitest-environment node
 import { routerToServerAndClientNew } from '../___testHelpers';
 import { createQueryClient } from '../__queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
 import {
-  experimental_formDataLink,
   getUntypedClient,
   httpBatchLink,
+  httpLink,
+  isNonJsonSerializable,
   loggerLink,
   splitLink,
 } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { initTRPC } from '@trpc/server';
-import {
-  experimental_createFileUploadHandler,
-  experimental_createMemoryUploadHandler,
-  experimental_isMultipartFormDataRequest,
-  experimental_NodeOnDiskFile,
-  experimental_parseMultipartFormData,
-  nodeHTTPFormDataContentTypeHandler,
-} from '@trpc/server/adapters/node-http/content-type/form-data';
-import { nodeHTTPJSONContentTypeHandler } from '@trpc/server/adapters/node-http/content-type/json';
 import type { CreateHTTPContextOptions } from '@trpc/server/adapters/standalone';
 import { konn } from 'konn';
 import type { ReactNode } from 'react';
 import React from 'react';
+import transformer from 'superjson';
 import { z } from 'zod';
 import { zfd } from 'zod-form-data';
-
-beforeAll(async () => {
-  const { FormData, File, Blob } = await import('node-fetch');
-  globalThis.FormData = FormData;
-  globalThis.File = File;
-  globalThis.Blob = Blob;
-});
 
 function formDataOrObject<T extends z.ZodRawShape>(input: T) {
   return zfd.formData(input).or(z.object(input));
@@ -43,19 +31,6 @@ const ctx = konn()
 
     const appRouter = t.router({
       polymorphic: t.procedure
-        .use(async (opts) => {
-          if (!experimental_isMultipartFormDataRequest(opts.ctx.req)) {
-            return opts.next();
-          }
-          const formData = await experimental_parseMultipartFormData(
-            opts.ctx.req,
-            experimental_createMemoryUploadHandler(),
-          );
-
-          return opts.next({
-            getRawInput: async () => formData,
-          });
-        })
         .input(
           formDataOrObject({
             text: z.string(),
@@ -65,16 +40,6 @@ const ctx = konn()
           return opts.input;
         }),
       uploadFile: t.procedure
-        .use(async (opts) => {
-          const formData = await experimental_parseMultipartFormData(
-            opts.ctx.req,
-            experimental_createMemoryUploadHandler(),
-          );
-
-          return opts.next({
-            getRawInput: async () => formData,
-          });
-        })
         .input(
           zfd.formData({
             file: zfd.file(),
@@ -89,24 +54,10 @@ const ctx = konn()
             },
           };
         }),
-      uploadFilesOnDiskAndIncludeTextPropertiesToo: t.procedure
-        .use(async (opts) => {
-          const maxBodySize = 100; // 100 bytes
-          const formData = await experimental_parseMultipartFormData(
-            opts.ctx.req,
-            experimental_createFileUploadHandler(),
-            maxBodySize,
-          );
-
-          return opts.next({
-            getRawInput: async () => formData,
-          });
-        })
+      uploadFilesAndIncludeTextPropertiesToo: t.procedure
         .input(
           zfd.formData({
-            files: zfd.repeatableOfType(
-              z.instanceof(experimental_NodeOnDiskFile),
-            ),
+            files: zfd.repeatableOfType(zfd.file()),
             text: z.string(),
             json: zfd.json(z.object({ foo: z.string() })),
           }),
@@ -126,6 +77,15 @@ const ctx = konn()
             json: input.json,
           };
         }),
+      q: t.procedure
+        .input(
+          zfd.formData({
+            foo: zfd.text(),
+          }),
+        )
+        .query((opts) => {
+          return opts.input;
+        }),
     });
 
     type TRouter = typeof appRouter;
@@ -135,21 +95,15 @@ const ctx = konn()
       error: vi.fn(),
     };
     const opts = routerToServerAndClientNew(appRouter, {
-      server: {
-        experimental_contentTypeHandlers: [
-          nodeHTTPFormDataContentTypeHandler(),
-          nodeHTTPJSONContentTypeHandler(),
-        ],
-      },
       client: ({ httpUrl }) => ({
         links: [
           loggerLink({
             enabled: () => true,
-            // console: loggerLinkConsole,
+            console: loggerLinkConsole,
           }),
           splitLink({
-            condition: (op) => op.input instanceof FormData,
-            true: experimental_formDataLink({
+            condition: (op) => isNonJsonSerializable(op.input),
+            true: httpLink({
               url: httpUrl,
             }),
             false: httpBatchLink({
@@ -180,7 +134,6 @@ const ctx = konn()
       close: opts.close,
       queryClient,
       App,
-      loggerLinkConsole,
     };
   })
   .afterEach(async (ctx) => {
@@ -239,7 +192,7 @@ test('upload a combination of files and non-file text fields', async () => {
   form.set('json', JSON.stringify({ foo: 'bar' }));
 
   const fileContents =
-    await ctx.client.uploadFilesOnDiskAndIncludeTextPropertiesToo.mutate(form);
+    await ctx.client.uploadFilesAndIncludeTextPropertiesToo.mutate(form);
 
   expect(fileContents).toEqual({
     files: [
@@ -261,45 +214,58 @@ test('upload a combination of files and non-file text fields', async () => {
   });
 });
 
-test('Throws when aggregate size of uploaded files and non-file text fields exceeds maxBodySize - files too large', async () => {
+test('GET requests are not supported', async () => {
   const form = new FormData();
-  form.append(
-    'files',
-    new File(['a'.repeat(50)], 'bob.txt', {
-      type: 'text/plain',
-    }),
-  );
-  form.append(
-    'files',
-    new File(['a'.repeat(51)], 'alice.txt', {
-      type: 'text/plain',
-    }),
-  );
-  form.set('text', 'foo');
-  form.set('json', JSON.stringify({ foo: 'bar' }));
+  form.set('foo', 'bar');
 
-  await expect(
-    ctx.client.uploadFilesOnDiskAndIncludeTextPropertiesToo.mutate(form),
-  ).rejects.toThrowErrorMatchingInlineSnapshot(
-    `"Body exceeded upload size of 100 bytes."`,
+  await expect(ctx.client.q.query(form)).rejects.toMatchInlineSnapshot(
+    `[TRPCClientError: FormData is only supported for mutations]`,
   );
 });
 
-test('Throws when aggregate size of uploaded files and non-file text fields exceeds maxBodySize - text fields too large', async () => {
-  const form = new FormData();
-  form.append(
-    'files',
-    new File(['hi bob'], 'bob.txt', {
-      type: 'text/plain',
-    }),
-  );
+describe('with transformer', () => {
+  const ctx = konn()
+    .beforeEach(() => {
+      const t = initTRPC.context<CreateHTTPContextOptions>().create({
+        transformer,
+      });
 
-  form.set('text', 'a'.repeat(101));
-  form.set('json', JSON.stringify({ foo: 'bar' }));
+      const appRouter = t.router({
+        polymorphic: t.procedure
+          .input(
+            zfd.formData({
+              text: z.string(),
+            }),
+          )
+          .mutation((opts) => {
+            return opts.input;
+          }),
+      });
 
-  await expect(
-    ctx.client.uploadFilesOnDiskAndIncludeTextPropertiesToo.mutate(form),
-  ).rejects.toThrowErrorMatchingInlineSnapshot(
-    `"Body exceeded upload size of 100 bytes."`,
-  );
+      return routerToServerAndClientNew(appRouter, {
+        client: ({ httpUrl }) => ({
+          links: [
+            httpLink({
+              url: httpUrl,
+              transformer,
+            }),
+          ],
+        }),
+      });
+    })
+    .afterEach(async (ctx) => {
+      await ctx?.close?.();
+    })
+    .done();
+
+  test('regression test: FormData + transformers', async () => {
+    const form = new FormData();
+    form.set('text', 'foo');
+
+    const formDataRes = await ctx.client.polymorphic.mutate(form);
+    const fd = new FormData();
+    fd.set('text', 'foo');
+    const jsonRes = await ctx.client.polymorphic.mutate(fd);
+    expect(formDataRes).toEqual(jsonRes);
+  });
 });

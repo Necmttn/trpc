@@ -1,128 +1,176 @@
+import type { Observable } from '../observable';
 import { createRecursiveProxy } from './createProxy';
 import { defaultFormatter } from './error/formatter';
-import { TRPCError } from './error/TRPCError';
+import { getTRPCErrorFromUnknown, TRPCError } from './error/TRPCError';
 import type {
   AnyProcedure,
+  ErrorHandlerOptions,
   inferProcedureInput,
-  inferTransformedProcedureOutput,
+  inferProcedureOutput,
+  LegacyObservableSubscriptionProcedure,
 } from './procedure';
 import type { ProcedureCallOptions } from './procedureBuilder';
-import type { AnyRootConfig } from './rootConfig';
-import type { CombinedDataTransformer } from './transformer';
+import type { AnyRootTypes, RootConfig } from './rootConfig';
 import { defaultTransformer } from './transformer';
-import type { MaybePromise } from './types';
-import { mergeWithoutOverrides, omitPrototype } from './utils';
+import type { MaybePromise, ValueOf } from './types';
+import {
+  isFunction,
+  isObject,
+  mergeWithoutOverrides,
+  omitPrototype,
+} from './utils';
 
-/** @internal **/
-export type ProcedureRecord = Record<string, AnyProcedure>;
-
-export interface ProcedureRouterRecord {
-  [key: string]: AnyProcedure | AnyRouter;
+export interface RouterRecord {
+  [key: string]: AnyProcedure | RouterRecord;
 }
-
-export interface RouterDef<
-  TConfig extends AnyRootConfig,
-  TRecord extends ProcedureRouterRecord,
-> {
-  _config: TConfig;
-  router: true;
-  procedure?: never;
-  procedures: TRecord;
-  record: TRecord;
-}
-
-export type AnyRouterDef<TConfig extends AnyRootConfig = AnyRootConfig> =
-  RouterDef<TConfig, any>;
 
 type DecorateProcedure<TProcedure extends AnyProcedure> = (
   input: inferProcedureInput<TProcedure>,
-) => Promise<TProcedure['_def']['_output_out']>;
+) => Promise<
+  TProcedure['_def']['type'] extends 'subscription'
+    ? TProcedure extends LegacyObservableSubscriptionProcedure<any>
+      ? Observable<inferProcedureOutput<TProcedure>, TRPCError>
+      : inferProcedureOutput<TProcedure>
+    : inferProcedureOutput<TProcedure>
+>;
 
 /**
  * @internal
  */
-type DecoratedProcedureRecord<TProcedures extends ProcedureRouterRecord> = {
-  [TKey in keyof TProcedures]: TProcedures[TKey] extends AnyRouter
-    ? DecoratedProcedureRecord<TProcedures[TKey]['_def']['record']>
-    : TProcedures[TKey] extends AnyProcedure
-    ? DecorateProcedure<TProcedures[TKey]>
+export type DecorateRouterRecord<TRecord extends RouterRecord> = {
+  [TKey in keyof TRecord]: TRecord[TKey] extends infer $Value
+    ? $Value extends AnyProcedure
+      ? DecorateProcedure<$Value>
+      : $Value extends RouterRecord
+        ? DecorateRouterRecord<$Value>
+        : never
     : never;
 };
 
 /**
  * @internal
  */
-export type RouterCaller<TDef extends AnyRouterDef> = (
+
+export type RouterCallerErrorHandler<TContext> = (
+  opts: ErrorHandlerOptions<TContext>,
+) => void;
+
+/**
+ * @internal
+ */
+export type RouterCaller<
+  TRoot extends AnyRootTypes,
+  TRecord extends RouterRecord,
+> = (
   /**
    * @note
    * If passing a function, we recommend it's a cached function
    * e.g. wrapped in `React.cache` to avoid unnecessary computations
    */
-  ctx:
-    | TDef['_config']['$types']['ctx']
-    | (() => MaybePromise<TDef['_config']['$types']['ctx']>),
-) => DecoratedProcedureRecord<TDef['record']>;
+  ctx: TRoot['ctx'] | (() => MaybePromise<TRoot['ctx']>),
+  options?: {
+    onError?: RouterCallerErrorHandler<TRoot['ctx']>;
+    signal?: AbortSignal;
+  },
+) => DecorateRouterRecord<TRecord>;
 
-export interface Router<TDef extends AnyRouterDef> {
-  _def: TDef;
-  /**
-   * @deprecated use `t.createCallerFactory(router)` instead
-   * @link https://trpc.io/docs/v11/server/server-side-calls
-   */
-  createCaller: RouterCaller<TDef>;
-}
+const lazySymbol = Symbol('lazy');
+export type Lazy<TAny> = (() => Promise<TAny>) & { [lazySymbol]: true };
 
-export type AnyRouter = Router<AnyRouterDef>;
-
-type inferRouterDef<TRouter extends AnyRouter> = TRouter extends Router<
-  infer TParams
->
-  ? TParams extends AnyRouterDef<any>
-    ? TParams
-    : never
-  : never;
-type inferRouterConfig<TRouter extends AnyRouter> =
-  inferRouterDef<TRouter>['_config'];
-
-export type inferRouterContext<TRouter extends AnyRouter> =
-  inferRouterConfig<TRouter>['$types']['ctx'];
-export type inferRouterError<TRouter extends AnyRouter> =
-  inferRouterConfig<TRouter>['$types']['errorShape'];
-export type inferRouterMeta<TRouter extends AnyRouter> =
-  inferRouterConfig<TRouter>['$types']['meta'];
-
-type GetInferenceHelpers<
-  TType extends 'input' | 'output',
-  TRouter extends AnyRouter,
-> = {
-  [TKey in keyof TRouter['_def']['record']]: TRouter['_def']['record'][TKey] extends infer TRouterOrProcedure
-    ? TRouterOrProcedure extends AnyRouter
-      ? GetInferenceHelpers<TType, TRouterOrProcedure>
-      : TRouterOrProcedure extends AnyProcedure
-      ? TType extends 'input'
-        ? inferProcedureInput<TRouterOrProcedure>
-        : inferTransformedProcedureOutput<
-            TRouter['_def']['_config'],
-            TRouterOrProcedure
-          >
-      : never
-    : never;
+type LazyLoader<TAny> = {
+  load: () => Promise<void>;
+  ref: Lazy<TAny>;
 };
 
-export type inferRouterInputs<TRouter extends AnyRouter> = GetInferenceHelpers<
-  'input',
-  TRouter
->;
+function once<T>(fn: () => T): () => T {
+  const uncalled = Symbol();
+  let result: T | typeof uncalled = uncalled;
+  return (): T => {
+    if (result === uncalled) {
+      result = fn();
+    }
+    return result;
+  };
+}
 
-export type inferRouterOutputs<TRouter extends AnyRouter> = GetInferenceHelpers<
-  'output',
-  TRouter
->;
+/**
+ * Lazy load a router
+ * @see https://trpc.io/docs/server/merging-routers#lazy-load
+ */
+export function lazy<TRouter extends AnyRouter>(
+  importRouter: () => Promise<
+    | TRouter
+    | {
+        [key: string]: TRouter;
+      }
+  >,
+): Lazy<NoInfer<TRouter>> {
+  async function resolve(): Promise<TRouter> {
+    const mod = await importRouter();
 
-function isRouter(
-  procedureOrRouter: AnyProcedure | AnyRouter,
-): procedureOrRouter is AnyRouter {
-  return 'router' in procedureOrRouter._def;
+    // if the module is a router, return it
+    if (isRouter(mod)) {
+      return mod;
+    }
+
+    const routers = Object.values(mod);
+
+    if (routers.length !== 1 || !isRouter(routers[0])) {
+      throw new Error(
+        "Invalid router module - either define exactly 1 export or return the router directly.\nExample: `experimental_lazy(() => import('./slow.js').then((m) => m.slowRouter))`",
+      );
+    }
+
+    return routers[0];
+  }
+  resolve[lazySymbol] = true as const;
+
+  return resolve;
+}
+
+function isLazy<TAny>(input: unknown): input is Lazy<TAny> {
+  return typeof input === 'function' && lazySymbol in input;
+}
+
+export interface Router<
+  TRoot extends AnyRootTypes,
+  TRecord extends RouterRecord,
+> {
+  _def: {
+    _config: RootConfig<TRoot>;
+    router: true;
+    procedure?: never;
+    procedures: TRecord;
+    record: TRecord;
+    lazy: Record<string, LazyLoader<AnyRouter>>;
+  };
+  /**
+   * @see https://trpc.io/docs/v11/server/server-side-calls
+   */
+  createCaller: RouterCaller<TRoot, TRecord>;
+}
+
+export type BuiltRouter<
+  TRoot extends AnyRootTypes,
+  TDef extends RouterRecord,
+> = Router<TRoot, TDef> & TDef;
+
+export type AnyRouter = Router<any, any>;
+
+export type inferRouterRootTypes<TRouter extends AnyRouter> =
+  TRouter['_def']['_config']['$types'];
+
+export type inferRouterContext<TRouter extends AnyRouter> =
+  inferRouterRootTypes<TRouter>['ctx'];
+export type inferRouterError<TRouter extends AnyRouter> =
+  inferRouterRootTypes<TRouter>['errorShape'];
+export type inferRouterMeta<TRouter extends AnyRouter> =
+  inferRouterRootTypes<TRouter>['meta'];
+
+function isRouter(value: unknown): value is AnyRouter {
+  return (
+    isObject(value) && isObject(value['_def']) && 'router' in value['_def']
+  );
 }
 
 const emptyRouter = {
@@ -145,33 +193,48 @@ const reservedWords = [
    * since JS will think that `.then` is something that exists
    */
   'then',
+  /**
+   * `fn.call()` and `fn.apply()` are reserved words because otherwise we can't call a function using `.call` or `.apply`
+   */
+  'call',
+  'apply',
 ];
 
-/**
- * @internal
- */
-export type CreateRouterInner<
-  TConfig extends AnyRootConfig,
-  TProcRouterRecord extends ProcedureRouterRecord,
-> = Router<RouterDef<TConfig, TProcRouterRecord>> &
-  /**
-   * This adds ability to call procedures directly but is primarily used for quick access in type inference
-   */
-  TProcRouterRecord;
+export type CreateRouterOptions = {
+  [key: string]:
+    | AnyProcedure
+    | AnyRouter
+    | CreateRouterOptions
+    | Lazy<AnyRouter>;
+};
+
+export type DecorateCreateRouterOptions<
+  TRouterOptions extends CreateRouterOptions,
+> = {
+  [K in keyof TRouterOptions]: TRouterOptions[K] extends infer $Value
+    ? $Value extends AnyProcedure
+      ? $Value
+      : $Value extends Router<any, infer TRecord>
+        ? TRecord
+        : $Value extends Lazy<Router<any, infer TRecord>>
+          ? TRecord
+          : $Value extends CreateRouterOptions
+            ? DecorateCreateRouterOptions<$Value>
+            : never
+    : never;
+};
 
 /**
  * @internal
  */
-export function createRouterFactory<TConfig extends AnyRootConfig>(
-  config: TConfig,
+export function createRouterFactory<TRoot extends AnyRootTypes>(
+  config: RootConfig<TRoot>,
 ) {
-  return function createRouterInner<
-    TProcRouterRecord extends ProcedureRouterRecord,
-  >(
-    procedures: TProcRouterRecord,
-  ): CreateRouterInner<TConfig, TProcRouterRecord> {
+  function createRouterInner<TInput extends CreateRouterOptions>(
+    input: TInput,
+  ): BuiltRouter<TRoot, DecorateCreateRouterOptions<TInput>> {
     const reservedWordsUsed = new Set(
-      Object.keys(procedures).filter((v) => reservedWords.includes(v)),
+      Object.keys(input).filter((v) => reservedWords.includes(v)),
     );
     if (reservedWordsUsed.size > 0) {
       throw new Error(
@@ -180,112 +243,222 @@ export function createRouterFactory<TConfig extends AnyRootConfig>(
       );
     }
 
-    const routerProcedures: ProcedureRecord = omitPrototype({});
-    function recursiveGetPaths(procedures: ProcedureRouterRecord, path = '') {
-      for (const [key, procedureOrRouter] of Object.entries(procedures ?? {})) {
-        const newPath = `${path}${key}`;
+    const procedures: Record<string, AnyProcedure> = omitPrototype({});
+    const lazy: Record<string, LazyLoader<AnyRouter>> = omitPrototype({});
 
-        if (isRouter(procedureOrRouter)) {
-          recursiveGetPaths(procedureOrRouter._def.procedures, `${newPath}.`);
+    function createLazyLoader(opts: {
+      ref: Lazy<AnyRouter>;
+      path: readonly string[];
+      key: string;
+      aggregate: RouterRecord;
+    }): LazyLoader<AnyRouter> {
+      return {
+        ref: opts.ref,
+        load: once(async () => {
+          const router = await opts.ref();
+          const lazyPath = [...opts.path, opts.key];
+          const lazyKey = lazyPath.join('.');
+
+          opts.aggregate[opts.key] = step(router._def.record, lazyPath);
+
+          delete lazy[lazyKey];
+
+          // add lazy loaders for nested routers
+          for (const [nestedKey, nestedItem] of Object.entries(
+            router._def.lazy,
+          )) {
+            const nestedRouterKey = [...lazyPath, nestedKey].join('.');
+
+            // console.log('adding lazy', nestedRouterKey);
+            lazy[nestedRouterKey] = createLazyLoader({
+              ref: nestedItem.ref,
+              path: lazyPath,
+              key: nestedKey,
+              aggregate: opts.aggregate[opts.key] as RouterRecord,
+            });
+          }
+        }),
+      };
+    }
+
+    function step(from: CreateRouterOptions, path: readonly string[] = []) {
+      const aggregate: RouterRecord = omitPrototype({});
+      for (const [key, item] of Object.entries(from ?? {})) {
+        if (isLazy(item)) {
+          lazy[[...path, key].join('.')] = createLazyLoader({
+            path,
+            ref: item,
+            key,
+            aggregate,
+          });
+          continue;
+        }
+        if (isRouter(item)) {
+          aggregate[key] = step(item._def.record, [...path, key]);
+          continue;
+        }
+        if (!isProcedure(item)) {
+          // RouterRecord
+          aggregate[key] = step(item, [...path, key]);
           continue;
         }
 
-        if (routerProcedures[newPath]) {
+        const newPath = [...path, key].join('.');
+
+        if (procedures[newPath]) {
           throw new Error(`Duplicate key: ${newPath}`);
         }
 
-        routerProcedures[newPath] = procedureOrRouter;
+        procedures[newPath] = item;
+        aggregate[key] = item;
       }
-    }
-    recursiveGetPaths(procedures);
 
-    const _def: AnyRouterDef<TConfig> = {
+      return aggregate;
+    }
+    const record = step(input);
+
+    const _def: AnyRouter['_def'] = {
       _config: config,
       router: true,
-      procedures: routerProcedures,
+      procedures,
+      lazy,
       ...emptyRouter,
-      record: procedures,
+      record,
     };
 
-    const router: AnyRouter = {
-      ...procedures,
+    const router: BuiltRouter<TRoot, {}> = {
+      ...(record as {}),
       _def,
-      createCaller(ctx) {
-        const proxy = createRecursiveProxy(({ path, args }) => {
-          const fullPath = path.join('.');
-          const procedure = _def.procedures[fullPath] as AnyProcedure;
-
-          return procedure({
-            path: fullPath,
-            getRawInput: async () => args[0],
-            ctx,
-            type: procedure._def.type,
-          });
-        });
-
-        return proxy as ReturnType<RouterCaller<any>>;
-      },
+      createCaller: createCallerFactory<TRoot>()({
+        _def,
+      }),
     };
+    return router as BuiltRouter<TRoot, DecorateCreateRouterOptions<TInput>>;
+  }
 
-    return router as any;
-  };
+  return createRouterInner;
 }
 
 function isProcedure(
-  procedureOrRouter: AnyProcedure | AnyRouter,
+  procedureOrRouter: ValueOf<CreateRouterOptions>,
 ): procedureOrRouter is AnyProcedure {
-  return !!procedureOrRouter._def.procedure;
+  return typeof procedureOrRouter === 'function';
 }
+
 /**
  * @internal
  */
-export function callProcedure(
-  opts: ProcedureCallOptions & { procedures: ProcedureRouterRecord },
+export async function getProcedureAtPath(
+  router: Pick<Router<any, any>, '_def'>,
+  path: string,
+): Promise<AnyProcedure | null> {
+  const { _def } = router;
+  let procedure = _def.procedures[path];
+
+  while (!procedure) {
+    const key = Object.keys(_def.lazy).find((key) => path.startsWith(key));
+    // console.log(`found lazy: ${key ?? 'NOPE'} (fullPath: ${fullPath})`);
+
+    if (!key) {
+      return null;
+    }
+    // console.log('loading', key, '.......');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const lazyRouter = _def.lazy[key]!;
+    await lazyRouter.load();
+
+    procedure = _def.procedures[path];
+  }
+
+  return procedure;
+}
+
+/**
+ * @internal
+ */
+export async function callProcedure(
+  opts: ProcedureCallOptions<unknown> & {
+    router: AnyRouter;
+    allowMethodOverride?: boolean;
+  },
 ) {
   const { type, path } = opts;
-  const proc = opts.procedures[path];
-  if (!proc || !isProcedure(proc) || proc._def.type !== type) {
+  const proc = await getProcedureAtPath(opts.router, path);
+  if (
+    !proc ||
+    !isProcedure(proc) ||
+    (proc._def.type !== type && !opts.allowMethodOverride)
+  ) {
     throw new TRPCError({
       code: 'NOT_FOUND',
       message: `No "${type}"-procedure on path "${path}"`,
     });
   }
 
+  /* istanbul ignore if -- @preserve */
+  if (
+    proc._def.type !== type &&
+    opts.allowMethodOverride &&
+    proc._def.type === 'subscription'
+  ) {
+    throw new TRPCError({
+      code: 'METHOD_NOT_SUPPORTED',
+      message: `Method override is not supported for subscriptions`,
+    });
+  }
+
   return proc(opts);
 }
 
-export function createCallerFactory<TConfig extends AnyRootConfig>() {
-  return function createCallerInner<
-    TRouter extends Router<AnyRouterDef<TConfig>>,
-  >(router: TRouter): RouterCaller<TRouter['_def']> {
-    const _def = router._def;
-    type Context = TConfig['$types']['ctx'];
+export function createCallerFactory<TRoot extends AnyRootTypes>() {
+  return function createCallerInner<TRecord extends RouterRecord>(
+    router: Pick<Router<TRoot, TRecord>, '_def'>,
+  ): RouterCaller<TRoot, TRecord> {
+    const { _def } = router;
+    type Context = TRoot['ctx'];
 
-    return function createCaller(maybeContext) {
-      const proxy = createRecursiveProxy(({ path, args }) => {
-        const fullPath = path.join('.');
-        const procedure = _def.procedures[fullPath] as AnyProcedure;
+    return function createCaller(ctxOrCallback, opts) {
+      return createRecursiveProxy<ReturnType<RouterCaller<any, any>>>(
+        async ({ path, args }) => {
+          const fullPath = path.join('.');
 
-        const callProc = (ctx: Context) =>
-          procedure({
-            path: fullPath,
-            getRawInput: async () => args[0],
-            ctx,
-            type: procedure._def.type,
-          });
-
-        if (typeof maybeContext === 'function') {
-          const context = (maybeContext as () => MaybePromise<Context>)();
-          if (context instanceof Promise) {
-            return context.then(callProc);
+          if (path.length === 1 && path[0] === '_def') {
+            return _def;
           }
-          return callProc(context);
-        }
 
-        return callProc(maybeContext);
-      });
+          const procedure = await getProcedureAtPath(router, fullPath);
 
-      return proxy as ReturnType<RouterCaller<any>>;
+          let ctx: Context | undefined = undefined;
+          try {
+            if (!procedure) {
+              throw new TRPCError({
+                code: 'NOT_FOUND',
+                message: `No procedure found on path "${path}"`,
+              });
+            }
+            ctx = isFunction(ctxOrCallback)
+              ? await Promise.resolve(ctxOrCallback())
+              : ctxOrCallback;
+
+            return await procedure({
+              path: fullPath,
+              getRawInput: async () => args[0],
+              ctx,
+              type: procedure._def.type,
+              signal: opts?.signal,
+            });
+          } catch (cause) {
+            opts?.onError?.({
+              ctx,
+              error: getTRPCErrorFromUnknown(cause),
+              input: args[0],
+              path: fullPath,
+              type: procedure?._def.type ?? 'unknown',
+            });
+            throw cause;
+          }
+        },
+      );
     };
   };
 }
@@ -293,25 +466,14 @@ export function createCallerFactory<TConfig extends AnyRootConfig>() {
 /** @internal */
 type MergeRouters<
   TRouters extends AnyRouter[],
-  TRouterDef extends AnyRouterDef = RouterDef<
-    TRouters[0]['_def']['_config'],
-    // eslint-disable-next-line @typescript-eslint/ban-types
-    {}
-  >,
+  TRoot extends AnyRootTypes = TRouters[0]['_def']['_config']['$types'],
+  TRecord extends RouterRecord = {},
 > = TRouters extends [
   infer Head extends AnyRouter,
   ...infer Tail extends AnyRouter[],
 ]
-  ? MergeRouters<
-      Tail,
-      {
-        _config: TRouterDef['_config'];
-        router: true;
-        procedures: Head['_def']['procedures'] & TRouterDef['procedures'];
-        record: Head['_def']['record'] & TRouterDef['record'];
-      }
-    >
-  : Router<TRouterDef> & TRouterDef['record'];
+  ? MergeRouters<Tail, TRoot, Head['_def']['record'] & TRecord>
+  : BuiltRouter<TRoot, TRecord>;
 
 export function mergeRouters<TRouters extends AnyRouter[]>(
   ...routerList: [...TRouters]
@@ -353,17 +515,18 @@ export function mergeRouters<TRouters extends AnyRouter[]>(
       return current._def._config.transformer;
     }
     return prev;
-  }, defaultTransformer as CombinedDataTransformer);
+  }, defaultTransformer);
 
   const router = createRouterFactory({
     errorFormatter,
     transformer,
-    isDev: routerList.some((r) => r._def._config.isDev),
-    allowOutsideOfServer: routerList.some(
+    isDev: routerList.every((r) => r._def._config.isDev),
+    allowOutsideOfServer: routerList.every(
       (r) => r._def._config.allowOutsideOfServer,
     ),
-    isServer: routerList.some((r) => r._def._config.isServer),
-    $types: routerList[0]?._def._config.$types as any,
+    isServer: routerList.every((r) => r._def._config.isServer),
+    $types: routerList[0]?._def._config.$types,
   })(record);
-  return router as any;
+
+  return router as MergeRouters<TRouters>;
 }

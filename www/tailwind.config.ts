@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 import type { Config } from 'tailwindcss';
 import plugin from 'tailwindcss/plugin';
 
@@ -6,6 +5,7 @@ const config: Config = {
   content: [
     './src/**/*.{js,jsx,ts,tsx,md,mdx}',
     './docs/**/*.{js,jsx,ts,tsx,md,mdx}',
+    './blog/**/*.{js,jsx,ts,tsx,md,mdx}',
   ],
   theme: {
     extend: {

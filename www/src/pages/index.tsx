@@ -31,19 +31,19 @@ const sandboxes = [
     files: ['src/client/index.ts', 'src/server/index.ts'],
   },
   {
+    id: 'minimal-react',
+    title: 'React',
+    description:
+      'This is a minimal full-stack React application using tRPC and React.',
+    files: ['client/src/Greeting.tsx', 'server/index.ts'],
+  },
+  {
     id: 'next-minimal-starter',
     title: 'Next.js',
     description:
       'This is a minimal full-stack React application using tRPC and Next.js.',
     files: ['src/pages/index.tsx', 'src/pages/api/trpc/[trpc].ts'],
   },
-  // {
-  //   id: 'minimal-react',
-  //   title: 'React',
-  //   description:
-  //     'This is a minimal full-stack React application using tRPC and React.',
-  //   files: ['client/src/App.tsx', 'server/index.ts'],
-  // },
 ] as const;
 
 /**
@@ -124,9 +124,7 @@ function TryItOut() {
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true }}
-        className={clsx(
-          'z-10 my-0 h-[800px] w-full overflow-hidden rounded-xl md:my-4 lg:my-8',
-        )}
+        className={clsx('relative z-10 my-0 w-full md:my-4 lg:my-8')}
       >
         <div className="h-full">
           <div className="flex w-full justify-center">
@@ -136,7 +134,7 @@ function TryItOut() {
                   key={it.id}
                   href={`?try=${it.id}#try-it-out`}
                   className={cn(
-                    'inline-flex min-w-[100px] items-center justify-center rounded-[0.185rem] px-3 py-1.5  text-sm font-medium text-zinc-700 transition-all disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-200',
+                    'inline-flex min-w-[100px] items-center justify-center rounded-[0.185rem] px-3 py-1.5 text-sm font-medium text-zinc-700 transition-all disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-200',
                     selectedId === it.id &&
                       'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100',
                   )}
@@ -155,7 +153,7 @@ function TryItOut() {
             <div
               key={sandbox.id}
               className={cn(
-                'relative h-full overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700',
+                'relative h-[800px] overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700',
                 selectedId !== sandbox.id && 'hidden',
               )}
             >
@@ -276,16 +274,16 @@ const HomeContent: React.FC = () => {
         <Features />
       </motion.section>
 
+      <section>
+        <CompaniesUsing />
+      </section>
+
       <section className="py-4 md:py-8">
         <QuickIntro />
       </section>
 
       <section className={'mx-auto hidden max-w-[1600px] md:block'}>
         <TryItOut />
-      </section>
-
-      <section>
-        <CompaniesUsing />
       </section>
 
       <section className="mx-auto max-w-[80ch] px-6 md:px-0">

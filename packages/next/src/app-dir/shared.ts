@@ -1,49 +1,80 @@
 import type {
   CreateTRPCClientOptions,
   Resolver,
-  TRPCUntypedClient,
+  TRPCClient,
 } from '@trpc/client';
+import { getUntypedClient, TRPCUntypedClient } from '@trpc/client';
+import type { inferProcedureOutput } from '@trpc/server';
 import type {
+  AnyClientTypes,
   AnyProcedure,
   AnyQueryProcedure,
-  AnyRootConfig,
+  AnyRootTypes,
   AnyRouter,
-  Filter,
   inferProcedureInput,
+  inferTransformedProcedureOutput,
   ProtectedIntersection,
+  RouterRecord,
 } from '@trpc/server/unstable-core-do-not-import';
 import { createRecursiveProxy } from '@trpc/server/unstable-core-do-not-import';
 
 /**
  * @internal
  */
-export type UseProcedureRecord<TRouter extends AnyRouter> = {
-  [TKey in keyof Filter<
-    TRouter['_def']['record'],
-    AnyQueryProcedure | AnyRouter
-  >]: TRouter['_def']['record'][TKey] extends AnyRouter
-    ? UseProcedureRecord<TRouter['_def']['record'][TKey]>
-    : Resolver<TRouter['_def']['_config'], TRouter['_def']['record'][TKey]>;
+export type UseProcedureRecord<
+  TRoot extends AnyRootTypes,
+  TRecord extends RouterRecord,
+> = {
+  [TKey in keyof TRecord]: TRecord[TKey] extends infer $Value
+    ? $Value extends AnyQueryProcedure
+      ? Resolver<{
+          input: inferProcedureInput<$Value>;
+          output: inferTransformedProcedureOutput<TRoot, $Value>;
+          errorShape: TRoot['errorShape'];
+          transformer: TRoot['transformer'];
+        }>
+      : $Value extends RouterRecord
+        ? UseProcedureRecord<TRoot, $Value>
+        : never
+    : never;
 };
 
 export function createUseProxy<TRouter extends AnyRouter>(
-  client: TRPCUntypedClient<TRouter>,
+  client: TRPCUntypedClient<TRouter> | TRPCClient<TRouter>,
 ) {
-  return createRecursiveProxy((opts) => {
+  const untypedClient: TRPCUntypedClient<TRouter> =
+    client instanceof TRPCUntypedClient ? client : getUntypedClient(client);
+
+  return createRecursiveProxy<
+    UseProcedureRecord<
+      TRouter['_def']['_config']['$types'],
+      TRouter['_def']['record']
+    >
+  >((opts) => {
     const path = opts.path.join('.');
 
-    return client.query(path, ...opts.args);
-  }) as UseProcedureRecord<TRouter>;
+    return untypedClient.query(path, ...opts.args);
+  });
 }
 
 type NextAppRouterUse<TRouter extends AnyRouter> = {
   <TData extends Promise<unknown>[]>(
-    cb: (t: UseProcedureRecord<TRouter>) => [...TData],
+    cb: (
+      t: UseProcedureRecord<
+        TRouter['_def']['_config']['$types'],
+        TRouter['_def']['record']
+      >,
+    ) => [...TData],
   ): {
     [TKey in keyof TData]: Awaited<TData[TKey]>;
   };
   <TData extends Promise<unknown>>(
-    cb: (t: UseProcedureRecord<TRouter>) => TData,
+    cb: (
+      t: UseProcedureRecord<
+        TRouter['_def']['_config']['$types'],
+        TRouter['_def']['record']
+      >,
+    ) => TData,
   ): Awaited<TData>;
 };
 type CreateTRPCNextAppRouterBase<TRouter extends AnyRouter> = {
@@ -52,7 +83,10 @@ type CreateTRPCNextAppRouterBase<TRouter extends AnyRouter> = {
 export type CreateTRPCNextAppRouter<TRouter extends AnyRouter> =
   ProtectedIntersection<
     CreateTRPCNextAppRouterBase<TRouter>,
-    UseProcedureRecord<TRouter>
+    UseProcedureRecord<
+      TRouter['_def']['_config']['$types'],
+      TRouter['_def']['record']
+    >
   >;
 
 /**
@@ -93,10 +127,10 @@ export interface ActionHandlerDef {
  * @internal
  */
 export type inferActionDef<
-  TConfig extends AnyRootConfig,
+  TRoot extends AnyClientTypes,
   TProc extends AnyProcedure,
 > = {
   input: inferProcedureInput<TProc>;
-  output: TProc['_def']['_output_out'];
-  errorShape: TConfig['$types']['errorShape'];
+  output: inferProcedureOutput<TProc>;
+  errorShape: TRoot['errorShape'];
 };

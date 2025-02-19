@@ -35,8 +35,7 @@ test('superjson up and down', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });
@@ -61,8 +60,7 @@ test('empty superjson up and down', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });
@@ -89,8 +87,7 @@ test('wsLink: empty superjson up and down', async () => {
     client({ wssUrl }) {
       ws = createWSClient({ url: wssUrl });
       return {
-        transformer,
-        links: [wsLink({ client: ws })],
+        links: [wsLink({ client: ws, transformer })],
       };
     },
   });
@@ -123,8 +120,7 @@ test('devalue up and down', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });
@@ -158,8 +154,7 @@ test('not batching: superjson up and devalue down', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpLink({ url: httpUrl })],
+        links: [httpLink({ url: httpUrl, transformer })],
       };
     },
   });
@@ -193,8 +188,7 @@ test('batching: superjson up and devalue down', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });
@@ -227,8 +221,7 @@ test('batching: superjson up and f down', async () => {
 
   const { close, client } = routerToServerAndClientNew(router, {
     client: ({ httpUrl }) => ({
-      transformer,
-      links: [httpBatchLink({ url: httpUrl })],
+      links: [httpBatchLink({ url: httpUrl, transformer })],
     }),
   });
   const res = await client.hello.query(date);
@@ -277,18 +270,17 @@ test('all transformers running in correct order', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });
   const res = await client.hello.query(world);
   expect(res).toBe(world);
-  expect(fn.mock.calls[0]![0]!).toBe('client:serialized');
-  expect(fn.mock.calls[1]![0]!).toBe('server:deserialized');
-  expect(fn.mock.calls[2]![0]!).toBe(world);
-  expect(fn.mock.calls[3]![0]!).toBe('server:serialized');
-  expect(fn.mock.calls[4]![0]!).toBe('client:deserialized');
+  expect(fn.mock.calls[0]![0]).toBe('client:serialized');
+  expect(fn.mock.calls[1]![0]).toBe('server:deserialized');
+  expect(fn.mock.calls[2]![0]).toBe(world);
+  expect(fn.mock.calls[3]![0]).toBe('server:serialized');
+  expect(fn.mock.calls[4]![0]).toBe('client:deserialized');
 
   await close();
 });
@@ -311,8 +303,7 @@ describe('transformer on router', () => {
     const { close, client } = routerToServerAndClientNew(router, {
       client({ httpUrl }) {
         return {
-          transformer,
-          links: [httpBatchLink({ url: httpUrl })],
+          links: [httpBatchLink({ url: httpUrl, transformer })],
         };
       },
     });
@@ -344,8 +335,7 @@ describe('transformer on router', () => {
           url: wssUrl,
         });
         return {
-          transformer,
-          links: [wsLink({ client: wsClient })],
+          links: [wsLink({ client: wsClient, transformer })],
         };
       },
     });
@@ -384,8 +374,7 @@ describe('transformer on router', () => {
           url: wssUrl,
         });
         return {
-          transformer,
-          links: [wsLink({ client: wsClient })],
+          links: [wsLink({ client: wsClient, transformer })],
         };
       },
     });
@@ -437,8 +426,7 @@ describe('transformer on router', () => {
       },
       client({ httpUrl }) {
         return {
-          transformer,
-          links: [httpBatchLink({ url: httpUrl })],
+          links: [httpBatchLink({ url: httpUrl, transformer })],
         };
       },
     });
@@ -475,8 +463,7 @@ test('superjson - no input', async () => {
   const { close, httpUrl } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });
@@ -514,8 +501,7 @@ describe('required transformers', () => {
     const router = t.router({});
 
     createTRPCClient<typeof router>({
-      links: [httpBatchLink({ url: '' })],
-      transformer,
+      links: [httpBatchLink({ url: '', transformer })],
     });
   });
 
@@ -525,18 +511,24 @@ describe('required transformers', () => {
       transformer,
     });
     const router = t.router({});
+    type Test = typeof t._config.$types.transformer;
 
-    // @ts-expect-error missing transformer on frontend
     createTRPCClient<typeof router>({
-      links: [httpBatchLink({ url: '' })],
+      links: [
+        httpBatchLink(
+          // @ts-expect-error missing transformer on frontend
+          { url: '' },
+        ),
+      ],
     });
   });
 
   test('errors with transformer set on frontend but not on backend', () => {
-    const transformer = superjson;
     const t = initTRPC.create({});
     const router = t.router({});
+    type Test = typeof t._config.$types.transformer;
 
+    const transformer = superjson;
     createTRPCClient<typeof router>({
       links: [httpBatchLink({ url: '' })],
       // @ts-expect-error missing transformer on backend
@@ -565,8 +557,7 @@ test('tupleson', async () => {
   const { close, client } = routerToServerAndClientNew(router, {
     client({ httpUrl }) {
       return {
-        transformer,
-        links: [httpBatchLink({ url: httpUrl })],
+        links: [httpBatchLink({ url: httpUrl, transformer })],
       };
     },
   });

@@ -1,15 +1,17 @@
-import type { ErrorFormatter } from './error/formatter';
-import type { TRPCErrorShape } from './rpc';
+import type { CombinedDataTransformer } from '../unstable-core-do-not-import';
+import type { DefaultErrorShape, ErrorFormatter } from './error/formatter';
+import type { JSONLProducerOptions } from './stream/jsonl';
+import type { SSEStreamProducerOptions } from './stream/sse';
 
 /**
  * The initial generics that are used in the init function
  * @internal
  */
-export interface RootConfigTypes {
+export interface RootTypes {
   ctx: object;
   meta: object;
-  errorShape: unknown;
-  transformer: unknown;
+  errorShape: DefaultErrorShape;
+  transformer: boolean;
 }
 
 /**
@@ -24,23 +26,25 @@ export const isServerDefault: boolean =
   !!globalThis.process?.env?.['VITEST_WORKER_ID'];
 
 /**
- * The runtime config that are used and actually represents real values underneath
+ * The tRPC root config
  * @internal
  */
-export interface RuntimeConfig<TTypes extends RootConfigTypes> {
+export interface RootConfig<TTypes extends RootTypes> {
+  /**
+   * The types that are used in the config
+   * @internal
+   */
+  $types: TTypes;
   /**
    * Use a data transformer
-   * @link https://trpc.io/docs/v11/data-transformers
+   * @see https://trpc.io/docs/v11/data-transformers
    */
-  transformer: TTypes['transformer'];
+  transformer: CombinedDataTransformer;
   /**
    * Use custom error formatting
-   * @link https://trpc.io/docs/v11/error-formatting
+   * @see https://trpc.io/docs/v11/error-formatting
    */
-  errorFormatter: ErrorFormatter<
-    TTypes['ctx'],
-    TRPCErrorShape<number> & { [key: string]: any }
-  >;
+  errorFormatter: ErrorFormatter<TTypes['ctx'], TTypes['errorShape']>;
   /**
    * Allow `@trpc/server` to run in non-server environments
    * @warning **Use with caution**, this should likely mainly be used within testing.
@@ -61,30 +65,59 @@ export interface RuntimeConfig<TTypes extends RootConfigTypes> {
   isDev: boolean;
 
   defaultMeta?: TTypes['meta'] extends object ? TTypes['meta'] : never;
+
+  /**
+   * Options for server-sent events (SSE) subscriptions
+   * @see https://trpc.io/docs/client/links/httpSubscriptionLink
+   */
+  sse?: {
+    /**
+     * Enable server-sent events (SSE) subscriptions
+     * @default true
+     */
+    enabled?: boolean;
+  } & Pick<
+    SSEStreamProducerOptions,
+    'ping' | 'emitAndEndImmediately' | 'maxDurationMs' | 'client'
+  >;
+
+  /**
+   * Options for batch stream
+   * @see https://trpc.io/docs/client/links/httpBatchStreamLink
+   */
+  jsonl?: Pick<JSONLProducerOptions, 'pingMs'>;
+  experimental?: {};
 }
 
 /**
  * @internal
  */
-export type CreateRootConfigTypes<TGenerics extends RootConfigTypes> =
-  TGenerics;
+export type CreateRootTypes<TGenerics extends RootTypes> = TGenerics;
 
-/**
- * The config that is resolved after `initTRPC.create()` has been called
- * Combination of `InitTOptions` + `InitGenerics`
- * @internal
- */
-export interface RootConfig<TGenerics extends RootConfigTypes>
-  extends RuntimeConfig<TGenerics> {
-  $types: TGenerics;
-}
-
-/**
- * @internal
- */
-export type AnyRootConfig = RootConfig<{
+export type AnyRootTypes = CreateRootTypes<{
   ctx: any;
   meta: any;
   errorShape: any;
   transformer: any;
 }>;
+
+type PartialIf<TCondition extends boolean, TType> = TCondition extends true
+  ? Partial<TType>
+  : TType;
+
+/**
+ * Adds a `createContext` option with a given callback function
+ * If context is the default value, then the `createContext` option is optional
+ */
+export type CreateContextCallback<
+  TContext,
+  TFunction extends (...args: any[]) => any,
+> = PartialIf<
+  object extends TContext ? true : false,
+  {
+    /**
+     * @see https://trpc.io/docs/v11/context
+     **/
+    createContext: TFunction;
+  }
+>;

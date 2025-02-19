@@ -6,14 +6,15 @@ slug: /client/react/useMutation
 ---
 
 :::note
-The hooks provided by `@trpc/react-query` are a thin wrapper around @tanstack/react-query. For in-depth information about options and usage patterns, refer to their docs on [mutations](https://tanstack.com/query/v5/docs/react/guides/mutations).
+The hooks provided by `@trpc/react-query` are a thin wrapper around @tanstack/react-query. For in-depth information about options and usage patterns, refer to their docs on [mutations](https://tanstack.com/query/v5/docs/framework/react/guides/mutations).
 :::
 
-Works like react-query's mutations - [see their docs](https://tanstack.com/query/v5/docs/react/guides/mutations).
+Works like react-query's mutations - [see their docs](https://tanstack.com/query/v5/docs/framework/react/guides/mutations).
 
 ### Example
 
-<details><summary>Backend code</summary>
+<details>
+<summary>Backend code</summary>
 
 ```tsx title='server/routers/_app.ts'
 import { initTRPC } from '@trpc/server';
@@ -49,7 +50,6 @@ export const appRouter = t.router({
 import { trpc } from '../utils/trpc';
 
 export function MyComponent() {
-  // This can either be a tuple ['login'] or string 'login'
   const mutation = trpc.login.useMutation();
 
   const handleLogin = () => {
@@ -61,7 +61,7 @@ export function MyComponent() {
   return (
     <div>
       <h1>Login Form</h1>
-      <button onClick={handleLogin} disabled={mutation.isLoading}>
+      <button onClick={handleLogin} disabled={mutation.isPending}>
         Login
       </button>
 

@@ -1,47 +1,59 @@
 import type { Resolver } from '@trpc/client';
 import type {
-  AnyMutationProcedure,
   AnyProcedure,
-  AnyQueryProcedure,
-  AnyRootConfig,
-  AnyRouter,
-  AnySubscriptionProcedure,
+  AnyRootTypes,
   inferProcedureInput,
-  ProcedureRouterRecord,
+  inferTransformedProcedureOutput,
+  ProcedureType,
+  RouterRecord,
 } from '@trpc/server/unstable-core-do-not-import';
 
+type ResolverDef = {
+  input: any;
+  output: any;
+  transformer: boolean;
+  errorShape: any;
+};
+
 export type DecorateProcedureServer<
-  TConfig extends AnyRootConfig,
-  TProcedure extends AnyProcedure,
-> = TProcedure extends AnyQueryProcedure
+  TType extends ProcedureType,
+  TDef extends ResolverDef,
+> = TType extends 'query'
   ? {
-      query: Resolver<TConfig, TProcedure>;
+      query: Resolver<TDef>;
       revalidate: (
-        input?: inferProcedureInput<TProcedure>,
+        input?: TDef['input'],
       ) => Promise<
         { revalidated: false; error: string } | { revalidated: true }
       >;
     }
-  : TProcedure extends AnyMutationProcedure
-  ? {
-      mutate: Resolver<TConfig, TProcedure>;
-    }
-  : TProcedure extends AnySubscriptionProcedure
-  ? {
-      subscribe: Resolver<TConfig, TProcedure>;
-    }
-  : never;
+  : TType extends 'mutation'
+    ? {
+        mutate: Resolver<TDef>;
+      }
+    : TType extends 'subscription'
+      ? {
+          subscribe: Resolver<TDef>;
+        }
+      : never;
 
-export type NextAppDirDecoratedProcedureRecord<
-  TConfig extends AnyRootConfig,
-  TProcedures extends ProcedureRouterRecord,
+export type NextAppDirDecorateRouterRecord<
+  TRoot extends AnyRootTypes,
+  TRecord extends RouterRecord,
 > = {
-  [TKey in keyof TProcedures]: TProcedures[TKey] extends AnyRouter
-    ? NextAppDirDecoratedProcedureRecord<
-        TConfig,
-        TProcedures[TKey]['_def']['record']
-      >
-    : TProcedures[TKey] extends AnyProcedure
-    ? DecorateProcedureServer<TConfig, TProcedures[TKey]>
+  [TKey in keyof TRecord]: TRecord[TKey] extends infer $Value
+    ? $Value extends AnyProcedure
+      ? DecorateProcedureServer<
+          $Value['_def']['type'],
+          {
+            input: inferProcedureInput<$Value>;
+            output: inferTransformedProcedureOutput<TRoot, $Value>;
+            errorShape: TRoot['errorShape'];
+            transformer: TRoot['transformer'];
+          }
+        >
+      : $Value extends RouterRecord
+        ? NextAppDirDecorateRouterRecord<TRoot, $Value>
+        : never
     : never;
 };

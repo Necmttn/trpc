@@ -2,7 +2,7 @@
 // We're testing this through E2E-testing
 import type {
   CreateReactUtils,
-  DecoratedProcedureRecord,
+  DecorateRouterRecord,
   TRPCUseQueries,
   TRPCUseSuspenseQueries,
 } from '@trpc/react-query/shared';
@@ -31,11 +31,11 @@ export interface CreateTRPCNextBase<
   /**
    * @deprecated renamed to `useUtils` and will be removed in a future tRPC version
    *
-   * @link https://trpc.io/docs/v11/client/react/useUtils
+   * @see https://trpc.io/docs/v11/client/react/useUtils
    */
   useContext(): CreateReactUtils<TRouter, TSSRContext>;
   /**
-   * @link https://trpc.io/docs/v11/client/react/useUtils
+   * @see https://trpc.io/docs/v11/client/react/useUtils
    */
   useUtils(): CreateReactUtils<TRouter, TSSRContext>;
   withTRPC: ReturnType<typeof withTRPC<TRouter, TSSRContext>>;
@@ -49,27 +49,29 @@ export interface CreateTRPCNextBase<
 export type CreateTRPCNext<
   TRouter extends AnyRouter,
   TSSRContext extends NextPageContext,
-  TFlags,
 > = ProtectedIntersection<
   CreateTRPCNextBase<TRouter, TSSRContext>,
-  DecoratedProcedureRecord<
-    TRouter['_def']['_config'],
-    TRouter['_def']['record'],
-    TFlags
+  DecorateRouterRecord<
+    TRouter['_def']['_config']['$types'],
+    TRouter['_def']['record']
   >
 >;
 
 export function createTRPCNext<
   TRouter extends AnyRouter,
   TSSRContext extends NextPageContext = NextPageContext,
-  TFlags = null,
 >(
   opts: WithTRPCNoSSROptions<TRouter> | WithTRPCSSROptions<TRouter>,
-): CreateTRPCNext<TRouter, TSSRContext, TFlags> {
+): CreateTRPCNext<TRouter, TSSRContext> {
   const hooks = createRootHooks<TRouter, TSSRContext>(opts);
 
   // TODO: maybe set TSSRContext to `never` when using `WithTRPCNoSSROptions`
   const _withTRPC = withTRPC(opts);
+
+  const proxy = createReactDecoration(hooks) as DecorateRouterRecord<
+    TRouter['_def']['_config']['$types'],
+    TRouter['_def']['record']
+  >;
 
   return createFlatProxy((key) => {
     if (key === 'useContext' || key === 'useUtils') {
@@ -94,6 +96,6 @@ export function createTRPCNext<
       return _withTRPC;
     }
 
-    return createReactDecoration(key, hooks);
+    return proxy[key];
   });
 }

@@ -7,28 +7,46 @@ export {
   experimental_standaloneMiddleware as experimental_trpcMiddleware,
   initTRPC,
   // --- FIXME a bunch of these exports are only useful for plugins - move them somewhere else? ----
-  callProcedure as callTRPCProcedure,
   getTRPCErrorFromUnknown,
   transformTRPCResponse,
   createFlatProxy as createTRPCFlatProxy,
+  createRecursiveProxy as createTRPCRecursiveProxy,
   type inferProcedureInput,
   type inferProcedureOutput,
+  type inferProcedureBuilderResolverOptions,
   type inferRouterError,
   type inferRouterInputs,
   type inferRouterOutputs,
   type inferRouterContext,
+  type inferClientTypes as inferTRPCClientTypes,
+  type AnyClientTypes as AnyTRPCClientTypes,
   type inferTransformedProcedureOutput,
   type inferTransformedSubscriptionOutput,
   type AnyProcedure as AnyTRPCProcedure,
   type AnyRouter as AnyTRPCRouter,
+  type AnyRootTypes as AnyTRPCRootTypes,
   type AnyMiddlewareFunction as AnyTRPCMiddlewareFunction,
   type CombinedDataTransformer as TRPCCombinedDataTransformer,
   type ProcedureType as TRPCProcedureType,
   type AnyMutationProcedure as AnyTRPCMutationProcedure,
   type AnyQueryProcedure as AnyTRPCQueryProcedure,
-  type ProcedureRouterRecord as TRPCProcedureRouterRecord,
+  type RouterRecord as TRPCRouterRecord,
   type AnySubscriptionProcedure as AnyTRPCSubscriptionProcedure,
-  type ProcedureOptions as TRPCProcedureOptions,
+  type CreateContextCallback,
+  type MutationProcedure as TRPCMutationProcedure,
+  type QueryProcedure as TRPCQueryProcedure,
+  type SubscriptionProcedure as TRPCSubscriptionProcedure,
+  type TRPCBuilder,
+  StandardSchemaV1Error,
+  /**
+   * @deprecated use `tracked(id, data)` instead
+   */
+  sse,
+  tracked,
+  type TrackedEnvelope,
+  isTrackedEnvelope,
+  lazy as experimental_lazy,
+  callProcedure as callTRPCProcedure,
 } from '../../unstable-core-do-not-import';
 
 export type {
@@ -72,10 +90,6 @@ export type {
    */
   AnyQueryProcedure,
   /**
-   * @deprecated use `TRPCProcedureRouterRecord` instead
-   */
-  ProcedureRouterRecord,
-  /**
    * @deprecated use `AnyTRPCSubscriptionProcedure` instead
    */
   AnySubscriptionProcedure,
@@ -86,11 +100,6 @@ export {
    * @deprecated use `getTRPCErrorShape` instead
    */
   getErrorShape,
-
-  /**
-   * @deprecated use `callTRPCProcedure` instead
-   */
-  callProcedure,
 } from '../../unstable-core-do-not-import';
 
 /**

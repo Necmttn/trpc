@@ -1,6 +1,7 @@
 import type {
   DefinedUseQueryResult,
-  DehydratedState,
+  FetchInfiniteQueryOptions,
+  FetchQueryOptions,
   InfiniteData,
   InfiniteQueryObserverSuccessResult,
   InitialDataFunction,
@@ -19,17 +20,18 @@ import type {
 } from '@tanstack/react-query';
 import type {
   CreateTRPCClientOptions,
+  TRPCClient,
   TRPCRequestOptions,
   TRPCUntypedClient,
 } from '@trpc/client';
 import type {
   AnyRouter,
+  coerceAsyncIterableToArray,
   DistributiveOmit,
 } from '@trpc/server/unstable-core-do-not-import';
-import type { ReactNode } from 'react';
+import type { JSX, ReactNode } from 'react';
 import type { TRPCContextProps } from '../../internals/context';
 import type { TRPCQueryKey } from '../../internals/getQueryKey';
-import type { TRPCHookResult } from '../../internals/useHookResult';
 
 export type OutputWithCursor<TData, TCursor = any> = {
   cursor: TCursor | null;
@@ -74,6 +76,13 @@ export interface UseTRPCSuspenseQueryOptions<TOutput, TData, TError>
     >,
     TRPCUseQueryBaseOptions {}
 
+export interface UseTRPCPrefetchQueryOptions<TOutput, TData, TError>
+  extends DistributiveOmit<
+      FetchQueryOptions<TOutput, TError, TData, any>,
+      'queryKey'
+    >,
+    TRPCUseQueryBaseOptions {}
+
 /** @internal **/
 export interface DefinedUseTRPCQueryOptions<
   TOutput,
@@ -113,6 +122,21 @@ export interface UseTRPCInfiniteQueryOptions<TInput, TOutput, TError>
   initialCursor?: ExtractCursorType<TInput>;
 }
 
+export type UseTRPCPrefetchInfiniteQueryOptions<TInput, TOutput, TError> =
+  DistributiveOmit<
+    FetchInfiniteQueryOptions<
+      TOutput,
+      TError,
+      TOutput,
+      any,
+      ExtractCursorType<TInput>
+    >,
+    'queryKey' | 'initialPageParam'
+  > &
+    TRPCUseQueryBaseOptions & {
+      initialCursor?: ExtractCursorType<TInput>;
+    };
+
 export interface UseTRPCSuspenseInfiniteQueryOptions<TInput, TOutput, TError>
   extends DistributiveOmit<
       UseSuspenseInfiniteQueryOptions<
@@ -138,24 +162,83 @@ export interface UseTRPCMutationOptions<
     TRPCUseQueryBaseOptions {}
 
 export interface UseTRPCSubscriptionOptions<TOutput, TError> {
+  /**
+   * @deprecated
+   * use a `skipToken` from `@tanstack/react-query` instead
+   * this will be removed in v12
+   */
   enabled?: boolean;
+  /**
+   * Called when the subscription is started
+   */
   onStarted?: () => void;
-  onData: (data: TOutput) => void;
+  /**
+   * Called when new data is received
+   */
+  onData?: (data: TOutput) => void;
+  /**
+   * Called when an **unrecoverable error** occurs and the subscription is closed
+   */
   onError?: (err: TError) => void;
+  /**
+   * Called when the subscription is completed on the server
+   */
+  onComplete?: () => void;
 }
+
+export interface TRPCSubscriptionBaseResult<TOutput, TError> {
+  status: 'idle' | 'connecting' | 'pending' | 'error';
+  data: undefined | TOutput;
+  error: null | TError;
+  /**
+   * Reset the subscription
+   */
+  reset: () => void;
+}
+
+export interface TRPCSubscriptionIdleResult<TOutput>
+  extends TRPCSubscriptionBaseResult<TOutput, null> {
+  status: 'idle';
+  data: undefined;
+  error: null;
+}
+
+export interface TRPCSubscriptionConnectingResult<TOutput, TError>
+  extends TRPCSubscriptionBaseResult<TOutput, TError> {
+  status: 'connecting';
+  data: undefined | TOutput;
+  error: TError | null;
+}
+
+export interface TRPCSubscriptionPendingResult<TOutput>
+  extends TRPCSubscriptionBaseResult<TOutput, undefined> {
+  status: 'pending';
+  data: TOutput | undefined;
+  error: null;
+}
+
+export interface TRPCSubscriptionErrorResult<TOutput, TError>
+  extends TRPCSubscriptionBaseResult<TOutput, TError> {
+  status: 'error';
+  data: TOutput | undefined;
+  error: TError;
+}
+
+export type TRPCSubscriptionResult<TOutput, TError> =
+  | TRPCSubscriptionIdleResult<TOutput>
+  | TRPCSubscriptionConnectingResult<TOutput, TError>
+  | TRPCSubscriptionErrorResult<TOutput, TError>
+  | TRPCSubscriptionPendingResult<TOutput>;
+
 export interface TRPCProviderProps<TRouter extends AnyRouter, TSSRContext>
-  extends TRPCContextProps<TRouter, TSSRContext> {
+  extends Omit<TRPCContextProps<TRouter, TSSRContext>, 'client'> {
   children: ReactNode;
+  client: TRPCClient<TRouter> | TRPCUntypedClient<TRouter>;
 }
 
 export type TRPCProvider<TRouter extends AnyRouter, TSSRContext> = (
   props: TRPCProviderProps<TRouter, TSSRContext>,
 ) => JSX.Element;
-
-export type UseDehydratedState<TRouter extends AnyRouter> = (
-  client: TRPCUntypedClient<TRouter>,
-  trpcState: DehydratedState | undefined,
-) => DehydratedState | undefined;
 
 export type CreateClient<TRouter extends AnyRouter> = (
   opts: CreateTRPCClientOptions<TRouter>,
@@ -165,7 +248,7 @@ export type CreateClient<TRouter extends AnyRouter> = (
  * @internal
  */
 export type UseTRPCQueryResult<TData, TError> = TRPCHookResult &
-  UseQueryResult<TData, TError>;
+  UseQueryResult<coerceAsyncIterableToArray<TData>, TError>;
 
 /**
  * @internal
@@ -226,3 +309,9 @@ export type UseTRPCSuspenseInfiniteQueryResult<TData, TError, TInput> = [
  */
 export type UseTRPCMutationResult<TData, TError, TVariables, TContext> =
   TRPCHookResult & UseMutationResult<TData, TError, TVariables, TContext>;
+
+export interface TRPCHookResult {
+  trpc: {
+    path: string;
+  };
+}

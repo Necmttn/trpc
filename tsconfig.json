@@ -1,27 +1,20 @@
 {
   "extends": "./tsconfig.build.json",
-  "include": [
-    "packages",
-    "types",
-    "scripts",
-    "examples",
-    "rollup.config.ts",
-    ".eslintrc.js"
-  ],
+  "include": ["packages", "types", "scripts", "examples"],
   "exclude": [],
   "compilerOptions": {
     "allowJs": false,
-    "baseUrl": ".",
     "paths": {
-      "$test/*": ["test/*"],
-      "@trpc/client": ["packages/client/src"],
-      "@trpc/client/*": ["packages/client/src/*"],
-      "@trpc/next": ["packages/next/src"],
-      "@trpc/next/*": ["packages/next/src/*"],
-      "@trpc/react-query": ["packages/react-query/src"],
-      "@trpc/react-query/*": ["packages/react-query/src/*"],
-      "@trpc/server": ["packages/server/src"],
-      "@trpc/server/*": ["packages/server/src/*"]
+      "@trpc/client": ["./packages/client/src"],
+      "@trpc/client/*": ["./packages/client/src/*"],
+      "@trpc/next": ["./packages/next/src"],
+      "@trpc/next/*": ["./packages/next/src/*"],
+      "@trpc/react-query": ["./packages/react-query/src"],
+      "@trpc/react-query/*": ["./packages/react-query/src/*"],
+      "@trpc/server": ["./packages/server/src"],
+      "@trpc/server/*": ["./packages/server/src/*"],
+      "@trpc/tanstack-react-query": ["./packages/tanstack-react-query/src"],
+      "@trpc/tanstack-react-query/*": ["./packages/tanstack-react-query/src/*"]
     },
     "types": ["node", "vitest/globals"]
   }

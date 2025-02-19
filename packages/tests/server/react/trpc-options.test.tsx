@@ -60,7 +60,7 @@ test('useQuery()', async () => {
     expect(utils.container).toHaveTextContent(`__result`);
   });
   expect(ctx.spyLink).toHaveBeenCalledTimes(1);
-  const firstCall = ctx.spyLink.mock.calls[0]![0]!;
+  const firstCall = ctx.spyLink.mock.calls[0]![0];
   expect(firstCall.context['foo']).toBe('bar');
   expect(firstCall).toMatchInlineSnapshot(`
     Object {
@@ -72,6 +72,7 @@ test('useQuery()', async () => {
         "id": "1",
       },
       "path": "greeting",
+      "signal": null,
       "type": "query",
     }
   `);
@@ -109,7 +110,7 @@ test('useMutation()', async () => {
     expect(utils.container).toHaveTextContent(`__result`);
   });
   expect(ctx.spyLink).toHaveBeenCalledTimes(1);
-  const firstCall = ctx.spyLink.mock.calls[0]![0]!;
+  const firstCall = ctx.spyLink.mock.calls[0]![0];
   expect(firstCall.context['foo']).toBe('bar');
   expect(firstCall).toMatchInlineSnapshot(`
     Object {
@@ -121,6 +122,7 @@ test('useMutation()', async () => {
         "id": "1",
       },
       "path": "doSomething",
+      "signal": undefined,
       "type": "mutation",
     }
   `);
